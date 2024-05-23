@@ -5,6 +5,7 @@ import re
 import boto3
 from botocore.config import Config
 from dotenv import load_dotenv
+from openai import AzureOpenAI as AzureOpenAIClient
 
 load_dotenv()
 
@@ -21,18 +22,23 @@ class MetaPrompt:
         with open(prompt_guide_path, "r") as f:
             self.metaprompt = f.read()
 
-        region_name = os.getenv("REGION_NAME")
-        session = boto3.Session()
-        retry_config = Config(
-            region_name=region_name,
-            retries={
-                "max_attempts": 5,
-                "mode": "standard",
-            },
-        )
-        service_name = "bedrock-runtime"
-        self.bedrock_client = session.client(
-            service_name=service_name, config=retry_config
+        # region_name = os.getenv("REGION_NAME")
+        # session = boto3.Session()
+        # retry_config = Config(
+        #     region_name=region_name,
+        #     retries={
+        #         "max_attempts": 5,
+        #         "mode": "standard",
+        #     },
+        # )
+        # service_name = "bedrock-runtime"
+        # self.bedrock_client = session.client(
+        #     service_name=service_name, config=retry_config
+        # )
+        self._client = AzureOpenAIClient(
+            api_key=os.getenv("OPENAI_API_KEY"),
+            api_version="2024-02-15-preview",
+            azure_endpoint=""
         )
 
     def __call__(self, task, variables):
@@ -52,23 +58,29 @@ class MetaPrompt:
             {"role": "user", "content": prompt},
             {"role": "assistant", "content": assistant_partial},
         ]
-        body = json.dumps(
-            {
-                "messages": messages,
-                "max_tokens": 4096,
-                "temperature": 0.0,
-                "anthropic_version": "bedrock-2023-05-31",
-            }
-        )
-        modelId = "anthropic.claude-3-haiku-20240307-v1:0"  # anthropic.claude-3-sonnet-20240229-v1:0 "anthropic.claude-3-haiku-20240307-v1:0"
-        accept = "application/json"
-        contentType = "application/json"
+        # body = json.dumps(
+        #     {
+        #         "messages": messages,
+        #         "max_tokens": 4096,
+        #         "temperature": 0.0,
+        #         "anthropic_version": "bedrock-2023-05-31",
+        #     }
+        # )
+        # modelId = "anthropic.claude-3-haiku-20240307-v1:0"  # anthropic.claude-3-sonnet-20240229-v1:0 "anthropic.claude-3-haiku-20240307-v1:0"
+        # accept = "application/json"
+        # contentType = "application/json"
 
-        response = self.bedrock_client.invoke_model(
-            body=body, modelId=modelId, accept=accept, contentType=contentType
+        # response = self.bedrock_client.invoke_model(
+        #     body=body, modelId=modelId, accept=accept, contentType=contentType
+        # )
+        # response_body = json.loads(response.get("body").read())
+        # message = response_body["content"][0]["text"]
+        completion = self._client.chat.completions.create(
+            model="gpt-4-turbo",
+            messages=messages,
+            temperature=0,
         )
-        response_body = json.loads(response.get("body").read())
-        message = response_body["content"][0]["text"]
+        message = completion.choices[0].message.content
 
         def pretty_print(message):
             print(
@@ -85,7 +97,10 @@ class MetaPrompt:
 
         extracted_prompt_template = self.extract_prompt(message)
         variables = self.extract_variables(message)
-
+        print("Variables:\n\n" + str(variables))
+        print("\n************************\n")
+        print("Prompt:")
+        pretty_print(extracted_prompt_template)
         return extracted_prompt_template.strip(), "\n".join(variables)
 
     def extract_between_tags(
@@ -120,3 +135,12 @@ class MetaPrompt:
 
 # VARIABLES = ["CUSTOMER_COMPLAINT", "COMPANY_NAME"]
 # test(TASK, VARIABLES)
+
+
+if __name__ == "__main__":
+    test = MetaPrompt()
+    TASK = "Draft an email responding to a customer complaint"  # Replace with your task!
+    # Optional: specify the input variables you want Claude to use. If you want Claude to choose, you can set `variables` to an empty list!
+
+    VARIABLES = "CUSTOMER_COMPLAINT\nCOMPANY_NAME"
+    test(TASK, VARIABLES)
